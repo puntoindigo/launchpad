@@ -60,21 +60,26 @@ export default function HomePage() {
                   {app.description}
                 </p>
 
-                {/* Pricing hint */}
-                <div className="flex items-center justify-between">
+                {/* Pricing hint + version links */}
+                <div className="flex items-center justify-between gap-2 flex-wrap">
                   <span className="text-xs text-white/30">
                     Pro: {app.pro.split(' — ')[0]}
                   </span>
-                  <Link
-                    href={`/${app.slug}`}
-                    className="text-sm font-medium px-4 py-2 rounded-lg transition-colors"
-                    style={{
-                      backgroundColor: `${app.color}20`,
-                      color: app.color,
-                    }}
-                  >
-                    Ver landing →
-                  </Link>
+                  <div className="flex gap-2">
+                    <Link
+                      href={`/${app.slug}`}
+                      className="text-xs font-medium px-3 py-1.5 rounded-lg border transition-colors border-white/10 text-white/40 hover:text-white/70 hover:border-white/20"
+                    >
+                      v1
+                    </Link>
+                    <Link
+                      href={`/v2/${app.slug}`}
+                      className="text-xs font-medium px-3 py-1.5 rounded-lg transition-colors"
+                      style={{ backgroundColor: `${app.color}22`, color: app.color }}
+                    >
+                      v2 · skill →
+                    </Link>
+                  </div>
                 </div>
               </div>
             </div>
