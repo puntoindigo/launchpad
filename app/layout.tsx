@@ -5,8 +5,8 @@ import './globals.css'
 const inter = Inter({ subsets: ['latin'] })
 
 export const metadata: Metadata = {
-  title: 'Punto Indigo Labs — 10 ideas listas para lanzar',
-  description: '10 productos SaaS con landing, stack y modelo de negocio. Listos para construir.',
+  title: 'Punto Indigo Labs',
+  description: 'Proyectos en curso, herramientas y micro-SaaS de Punto Indigo.',
 }
 
 export default function RootLayout({
