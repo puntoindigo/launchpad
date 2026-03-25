@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useRef, useCallback } from 'react'
+import React, { useState, useEffect, useRef, useCallback } from 'react'
 import Link from 'next/link'
 
 // ── Types ────────────────────────────────────────────────────────────────────
@@ -308,6 +308,169 @@ const STATUS_LABEL: Record<BotStatus, string> = {
   error:      'Error',
 }
 
+// ── Bot card (fuera del padre para evitar re-mount en cada render) ────────────
+
+type BotCardProps = {
+  bot: Bot
+  depth?: number
+  openId: string | null
+  logs: Record<string, string[]>
+  loadingLogs: Record<string, boolean>
+  logsEndRef: React.RefObject<HTMLDivElement | null>
+  children: Record<string, Bot[]>
+  replyText: Record<string, string>
+  replying: Record<string, boolean>
+  onToggle: (id: string) => void
+  onStop: (id: string) => void
+  onClose: (id: string) => void
+  onReplyChange: (id: string, val: string) => void
+  onReplySend: (bot: Bot) => void
+}
+
+function BotCard({
+  bot, depth = 0,
+  openId, logs, loadingLogs, logsEndRef, children,
+  replyText, replying,
+  onToggle, onStop, onClose, onReplyChange, onReplySend,
+}: BotCardProps) {
+  const isOpen    = openId === bot.id
+  const botLogs   = logs[bot.id] ?? []
+  const color     = STATUS_COLOR[bot.status] ?? '#888'
+  const isRunning = bot.status === 'corriendo' || bot.status === 'iniciando'
+  const kids      = children[bot.id] ?? []
+
+  return (
+    <div className={depth > 0 ? 'ml-4 mt-2 border-l-2 border-white/10 pl-3' : ''}>
+      <div className="bg-[#111] rounded-xl border border-white/5 overflow-hidden transition-all hover:border-white/10">
+
+        {/* Header row */}
+        <div
+          className="p-4 flex items-start gap-3 cursor-pointer hover:bg-white/[0.02]"
+          onClick={() => onToggle(bot.id)}
+        >
+          {/* Status dot */}
+          <div className="mt-1 flex-shrink-0">
+            {isRunning ? (
+              <span className="relative flex h-2.5 w-2.5">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full opacity-75"
+                  style={{ backgroundColor: color }} />
+                <span className="relative inline-flex rounded-full h-2.5 w-2.5"
+                  style={{ backgroundColor: color }} />
+              </span>
+            ) : (
+              <span className="w-2.5 h-2.5 rounded-full block" style={{ backgroundColor: color }} />
+            )}
+          </div>
+
+          <div className="flex-1 min-w-0">
+            <div className="flex items-center gap-2 mb-0.5 flex-wrap">
+              <span className="text-xs font-mono text-white/40">{projectName(bot.projectPath)}</span>
+              <span className="text-xs px-1.5 py-0.5 rounded font-medium"
+                style={{ backgroundColor: `${color}20`, color }}>
+                {STATUS_LABEL[bot.status]}
+              </span>
+              {bot.resumable && (
+                <span className="text-xs px-1.5 py-0.5 rounded bg-[#c8f135]/10 text-[#c8f135]/70">
+                  reanudable
+                </span>
+              )}
+              {bot.parentBotId && (
+                <span className="text-xs text-white/25">↳ respuesta</span>
+              )}
+            </div>
+            <p className="text-sm text-white/80 line-clamp-2">{bot.task}</p>
+            <div className="flex items-center gap-2 mt-1 text-xs text-white/25 font-mono">
+              <span>{fmtTime(bot.startTime)}</span>
+              <span>·</span>
+              <span>{elapsed(bot.startTime, bot.endTime)}</span>
+              {bot.logCount > 0 && <><span>·</span><span>{bot.logCount} líneas</span></>}
+              {kids.length > 0 && <><span>·</span><span>{kids.length} respuesta{kids.length > 1 ? 's' : ''}</span></>}
+            </div>
+          </div>
+
+          <div className="flex items-center gap-1.5 flex-shrink-0">
+            {isRunning && (
+              <button onClick={e => { e.stopPropagation(); onStop(bot.id) }}
+                className="text-xs px-2 py-1 rounded border border-white/10 text-white/40 hover:text-white hover:border-white/30 transition-colors">
+                Detener
+              </button>
+            )}
+            {!isRunning && !bot.closed && (
+              <button onClick={e => { e.stopPropagation(); onClose(bot.id) }}
+                className="text-xs px-2 py-1 rounded border border-white/10 text-white/30 hover:text-white hover:border-white/20 transition-colors">
+                Archivar
+              </button>
+            )}
+            <span className="text-white/20 text-sm">{isOpen ? '▲' : '▼'}</span>
+          </div>
+        </div>
+
+        {/* Expanded panel */}
+        {isOpen && (
+          <div className="border-t border-white/5">
+            <div className="bg-black/40 px-4 py-4 max-h-[480px] overflow-y-auto">
+              {loadingLogs[bot.id] ? (
+                <p className="text-xs text-white/30 font-mono">Cargando…</p>
+              ) : botLogs.length === 0 ? (
+                <p className="text-xs text-white/20 font-mono">Sin actividad registrada.</p>
+              ) : (
+                <>
+                  <LogView rawLogs={botLogs} />
+                  <div ref={logsEndRef} />
+                </>
+              )}
+            </div>
+
+            <div className="border-t border-white/5 px-4 py-3">
+              <div className="flex gap-2 items-start">
+                <div className="flex-1">
+                  <textarea
+                    className="w-full bg-[#0a0a0a] border border-white/10 rounded-lg px-3 py-2 text-sm text-white outline-none focus:border-[#c8f135]/40 font-mono resize-none"
+                    rows={2}
+                    placeholder={
+                      bot.resumable
+                        ? 'Respondé a Claude para continuar esta sesión…'
+                        : 'Enviá una nueva tarea en el mismo proyecto con este contexto…'
+                    }
+                    value={replyText[bot.id] ?? ''}
+                    onChange={e => onReplyChange(bot.id, e.target.value)}
+                    onKeyDown={e => {
+                      if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) onReplySend(bot)
+                    }}
+                  />
+                  <p className="text-xs text-white/20 mt-1 font-mono">
+                    {bot.resumable
+                      ? '⌘/Ctrl+Enter para enviar · Continúa la misma sesión'
+                      : '⌘/Ctrl+Enter para enviar · Inicia una nueva tarea con contexto'}
+                  </p>
+                </div>
+                <button
+                  onClick={() => onReplySend(bot)}
+                  disabled={replying[bot.id] || !(replyText[bot.id] ?? '').trim()}
+                  className="px-4 py-2 rounded-lg text-sm font-bold transition-all disabled:opacity-30 flex-shrink-0"
+                  style={{ backgroundColor: '#c8f135', color: '#0a0a0a' }}
+                >
+                  {replying[bot.id] ? '…' : 'Enviar'}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {kids.map(kid => (
+        <BotCard key={kid.id} bot={kid} depth={depth + 1}
+          openId={openId} logs={logs} loadingLogs={loadingLogs}
+          logsEndRef={logsEndRef} children={children}
+          replyText={replyText} replying={replying}
+          onToggle={onToggle} onStop={onStop} onClose={onClose}
+          onReplyChange={onReplyChange} onReplySend={onReplySend}
+        />
+      ))}
+    </div>
+  )
+}
+
 // ── Component ─────────────────────────────────────────────────────────────────
 
 export default function DevbotPage() {
@@ -593,148 +756,6 @@ export default function DevbotPage() {
 
   const activeBots = bots.filter(b => b.status === 'corriendo' || b.status === 'iniciando')
 
-  // ── Bot card ──────────────────────────────────────────────────────────────────
-
-  function BotCard({ bot, depth = 0 }: { bot: Bot; depth?: number }) {
-    const isOpen    = openId === bot.id
-    const botLogs   = logs[bot.id] ?? []
-    const color     = STATUS_COLOR[bot.status] ?? '#888'
-    const isRunning = bot.status === 'corriendo' || bot.status === 'iniciando'
-    const kids      = children[bot.id] ?? []
-
-    return (
-      <div className={depth > 0 ? 'ml-4 mt-2 border-l-2 border-white/10 pl-3' : ''}>
-        <div className="bg-[#111] rounded-xl border border-white/5 overflow-hidden transition-all hover:border-white/10">
-
-          {/* Header row */}
-          <div
-            className="p-4 flex items-start gap-3 cursor-pointer hover:bg-white/[0.02]"
-            onClick={() => toggleBot(bot.id)}
-          >
-            {/* Status dot */}
-            <div className="mt-1 flex-shrink-0">
-              {isRunning ? (
-                <span className="relative flex h-2.5 w-2.5">
-                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full opacity-75"
-                    style={{ backgroundColor: color }} />
-                  <span className="relative inline-flex rounded-full h-2.5 w-2.5"
-                    style={{ backgroundColor: color }} />
-                </span>
-              ) : (
-                <span className="w-2.5 h-2.5 rounded-full block" style={{ backgroundColor: color }} />
-              )}
-            </div>
-
-            <div className="flex-1 min-w-0">
-              {/* Project + badges */}
-              <div className="flex items-center gap-2 mb-0.5 flex-wrap">
-                <span className="text-xs font-mono text-white/40">{projectName(bot.projectPath)}</span>
-                <span className="text-xs px-1.5 py-0.5 rounded font-medium"
-                  style={{ backgroundColor: `${color}20`, color }}>
-                  {STATUS_LABEL[bot.status]}
-                </span>
-                {bot.resumable && (
-                  <span className="text-xs px-1.5 py-0.5 rounded bg-[#c8f135]/10 text-[#c8f135]/70">
-                    reanudable
-                  </span>
-                )}
-                {bot.parentBotId && (
-                  <span className="text-xs text-white/25">↳ respuesta</span>
-                )}
-              </div>
-              {/* Task text */}
-              <p className="text-sm text-white/80 line-clamp-2">{bot.task}</p>
-              {/* Meta */}
-              <div className="flex items-center gap-2 mt-1 text-xs text-white/25 font-mono">
-                <span>{fmtTime(bot.startTime)}</span>
-                <span>·</span>
-                <span>{elapsed(bot.startTime, bot.endTime)}</span>
-                {bot.logCount > 0 && <><span>·</span><span>{bot.logCount} líneas</span></>}
-                {kids.length > 0 && <><span>·</span><span>{kids.length} respuesta{kids.length > 1 ? 's' : ''}</span></>}
-              </div>
-            </div>
-
-            {/* Action buttons */}
-            <div className="flex items-center gap-1.5 flex-shrink-0">
-              {isRunning && (
-                <button onClick={e => { e.stopPropagation(); stopBot(bot.id) }}
-                  className="text-xs px-2 py-1 rounded border border-white/10 text-white/40 hover:text-white hover:border-white/30 transition-colors">
-                  Detener
-                </button>
-              )}
-              {!isRunning && !bot.closed && (
-                <button onClick={e => { e.stopPropagation(); closeBot(bot.id) }}
-                  className="text-xs px-2 py-1 rounded border border-white/10 text-white/30 hover:text-white hover:border-white/20 transition-colors">
-                  Archivar
-                </button>
-              )}
-              <span className="text-white/20 text-sm">{isOpen ? '▲' : '▼'}</span>
-            </div>
-          </div>
-
-          {/* Expanded panel */}
-          {isOpen && (
-            <div className="border-t border-white/5">
-              {/* Logs */}
-              <div className="bg-black/40 px-4 py-4 max-h-[480px] overflow-y-auto">
-                {loadingLogs[bot.id] ? (
-                  <p className="text-xs text-white/30 font-mono">Cargando…</p>
-                ) : botLogs.length === 0 ? (
-                  <p className="text-xs text-white/20 font-mono">Sin actividad registrada.</p>
-                ) : (
-                  <>
-                    <LogView rawLogs={botLogs} />
-                    <div ref={logsEndRef} />
-                  </>
-                )}
-              </div>
-
-              {/* Reply input — available for ALL bots */}
-              <div className="border-t border-white/5 px-4 py-3">
-                <div className="flex gap-2 items-start">
-                  <div className="flex-1">
-                    <textarea
-                      className="w-full bg-[#0a0a0a] border border-white/10 rounded-lg px-3 py-2 text-sm text-white outline-none focus:border-[#c8f135]/40 font-mono resize-none"
-                      rows={2}
-                      placeholder={
-                        bot.resumable
-                          ? 'Respondé a Claude para continuar esta sesión…'
-                          : 'Enviá una nueva tarea en el mismo proyecto con este contexto…'
-                      }
-                      value={replyText[bot.id] ?? ''}
-                      onChange={e => setReplyText(p => ({ ...p, [bot.id]: e.target.value }))}
-                      onKeyDown={e => {
-                        if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) sendReply(bot)
-                      }}
-                    />
-                    <p className="text-xs text-white/20 mt-1 font-mono">
-                      {bot.resumable
-                        ? '⌘/Ctrl+Enter para enviar · Continúa la misma sesión'
-                        : '⌘/Ctrl+Enter para enviar · Inicia una nueva tarea con contexto'}
-                    </p>
-                  </div>
-                  <button
-                    onClick={() => sendReply(bot)}
-                    disabled={replying[bot.id] || !(replyText[bot.id] ?? '').trim()}
-                    className="px-4 py-2 rounded-lg text-sm font-bold transition-all disabled:opacity-30 flex-shrink-0"
-                    style={{ backgroundColor: '#c8f135', color: '#0a0a0a' }}
-                  >
-                    {replying[bot.id] ? '…' : 'Enviar'}
-                  </button>
-                </div>
-              </div>
-            </div>
-          )}
-        </div>
-
-        {/* Thread children */}
-        {kids.map(kid => (
-          <BotCard key={kid.id} bot={kid} depth={depth + 1} />
-        ))}
-      </div>
-    )
-  }
-
   // ── Render ────────────────────────────────────────────────────────────────────
 
   return (
@@ -849,7 +870,16 @@ export default function DevbotPage() {
               Ningún bot activo. Presioná <strong>+</strong> para lanzar una tarea.
             </p>
           ) : (
-            topBots.map(bot => <BotCard key={bot.id} bot={bot} />)
+            topBots.map(bot => (
+              <BotCard key={bot.id} bot={bot}
+                openId={openId} logs={logs} loadingLogs={loadingLogs}
+                logsEndRef={logsEndRef} children={children}
+                replyText={replyText} replying={replying}
+                onToggle={toggleBot} onStop={stopBot} onClose={closeBot}
+                onReplyChange={(id, val) => setReplyText(p => ({ ...p, [id]: val }))}
+                onReplySend={sendReply}
+              />
+            ))
           )}
         </main>
       )}
