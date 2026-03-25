@@ -47,7 +47,7 @@ function elapsed(ms: number) {
 }
 
 export default function DevbotPage() {
-  const [serverUrl, setServerUrl] = useState('http://localhost:3000')
+  const [serverUrl, setServerUrl] = useState('http://localhost:3333')
   const [editingUrl, setEditingUrl] = useState(false)
   const [urlInput, setUrlInput] = useState('')
   const [connected, setConnected] = useState(false)
@@ -61,7 +61,10 @@ export default function DevbotPage() {
   const [launching, setLaunching] = useState(false)
   const [modalError, setModalError] = useState('')
   const [now, setNow] = useState(Date.now())
+  const [copied, setCopied] = useState(false)
+  const [retrying, setRetrying] = useState(false)
   const wsRef = useRef<WebSocket | null>(null)
+  const retryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   // Persist server URL
   useEffect(() => {
@@ -135,12 +138,21 @@ export default function DevbotPage() {
     ws.onclose = () => {
       setConnected(false)
       wsRef.current = null
+      // Auto-retry every 5s while disconnected
+      retryTimerRef.current = setTimeout(() => connect(url), 5000)
     }
 
     ws.onerror = () => {
       setConnected(false)
     }
   }, [fetchBots, fetchProjects])
+
+  // Clear retry timer on unmount
+  useEffect(() => {
+    return () => {
+      if (retryTimerRef.current) clearTimeout(retryTimerRef.current)
+    }
+  }, [])
 
   // Initial connect
   useEffect(() => {
@@ -210,8 +222,6 @@ export default function DevbotPage() {
     fetchBots(serverUrl)
   }
 
-  const selectedBotData = bots.find((b) => b.id === selectedBot)
-
   return (
     <div className="min-h-screen bg-[#0a0a0a] text-white" style={{ fontFamily: 'monospace' }}>
 
@@ -250,11 +260,55 @@ export default function DevbotPage() {
         </div>
       </header>
 
-      {/* Not connected banner */}
+      {/* Offline panel */}
       {!connected && (
-        <div className="bg-[#ef444420] border-b border-[#ef4444]/30 px-4 py-2 text-sm text-[#ef4444]">
-          Sin conexión al servidor. Verificá que el devbot esté corriendo en{' '}
-          <code className="font-mono">{serverUrl}</code>.
+        <div className="max-w-3xl mx-auto px-4 mt-10">
+          <div className="bg-[#111] border border-white/10 rounded-2xl p-6">
+            <div className="flex items-center gap-3 mb-4">
+              <span className="w-3 h-3 rounded-full bg-[#ef4444]" />
+              <h2 className="font-bold">Servidor no encontrado</h2>
+            </div>
+            <p className="text-white/50 text-sm mb-5">
+              El devbot no está corriendo en <code className="font-mono text-white/70">{serverUrl}</code>.
+              Inicialo en la terminal y la página se va a conectar automáticamente.
+            </p>
+
+            {/* Start command */}
+            <div className="bg-black/50 border border-white/10 rounded-xl px-4 py-3 font-mono text-sm text-white/80 flex items-center justify-between gap-4 mb-4">
+              <span className="truncate">
+                cd C:\Users\Ema\Documents\projects\devbot-orchestrator &amp;&amp; node server.js
+              </span>
+              <button
+                onClick={() => {
+                  navigator.clipboard.writeText(
+                    'cd C:\\Users\\Ema\\Documents\\projects\\devbot-orchestrator && node server.js'
+                  )
+                  setCopied(true)
+                  setTimeout(() => setCopied(false), 2000)
+                }}
+                className="text-xs px-3 py-1.5 rounded-lg border border-white/10 text-white/50 hover:text-white hover:border-white/30 transition-colors flex-shrink-0"
+              >
+                {copied ? '✓ Copiado' : 'Copiar'}
+              </button>
+            </div>
+
+            <div className="flex items-center gap-3">
+              <button
+                onClick={() => {
+                  setRetrying(true)
+                  if (retryTimerRef.current) clearTimeout(retryTimerRef.current)
+                  connect(serverUrl)
+                  setTimeout(() => setRetrying(false), 2000)
+                }}
+                className="text-sm px-4 py-2 rounded-lg border border-white/10 text-white/50 hover:text-white hover:border-white/30 transition-colors"
+              >
+                {retrying ? 'Reintentando...' : 'Reintentar ahora'}
+              </button>
+              <span className="text-xs text-white/30">
+                Reintentando automáticamente cada 5 segundos
+              </span>
+            </div>
+          </div>
         </div>
       )}
 
