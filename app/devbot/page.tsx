@@ -680,16 +680,17 @@ export default function DevbotPage() {
           body: JSON.stringify({ message: msg }),
         })
       } else {
-        // No session — start new bot in same project with context
+        // No session — start new bot in same project, linked as child
         const contextTask = `Contexto: la tarea anterior en este proyecto fue:\n"${bot.task}"\n\n${msg}`
         await api('/api/bots/start', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ projectPath: bot.projectPath, task: contextTask }),
+          body: JSON.stringify({ projectPath: bot.projectPath, task: contextTask, parentBotId: bot.id }),
         })
       }
       setReplyText(p => ({ ...p, [bot.id]: '' }))
-      fetchBots()
+      // Pequeña espera para que el servidor registre el bot antes de refrescar
+      setTimeout(() => fetchBots(), 300)
     } finally {
       setReplying(p => ({ ...p, [bot.id]: false }))
     }
