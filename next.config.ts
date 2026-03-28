@@ -1,3 +1,5 @@
 import type { NextConfig } from 'next'
-const nextConfig: NextConfig = {}
+const nextConfig: NextConfig = {
+  basePath: '/launchpad',
+}
 export default nextConfig

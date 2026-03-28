@@ -74,7 +74,7 @@ export default function HomePage() {
                       ))}
                     </div>
                     {/* actions */}
-                    <div className="flex gap-2">
+                    <div className="flex gap-2 flex-wrap">
                       {href && (
                         <Link
                           href={href}
@@ -86,6 +86,12 @@ export default function HomePage() {
                           {p.internalUrl ? 'Abrir →' : 'Ver app →'}
                         </Link>
                       )}
+                      <Link
+                        href={`/devbot?project=${p.slug}`}
+                        className="text-xs px-3 py-1.5 rounded-lg border border-[#c8f135]/20 text-[#c8f135]/60 hover:text-[#c8f135] hover:border-[#c8f135]/40 transition-colors font-mono"
+                      >
+                        Devbot
+                      </Link>
                       {p.repo && (
                         <a
                           href={p.repo}

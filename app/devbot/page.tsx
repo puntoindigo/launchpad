@@ -494,7 +494,12 @@ export default function DevbotPage() {
   const [projects,    setProjects]    = useState<Project[]>([])
   const [config,      setConfig]      = useState<Config>({})
   const [showClosed,  setShowClosed]  = useState(false)
-  const [selectedProject, setSelectedProject] = useState<string | null>(null)
+  const [selectedProject, setSelectedProject] = useState<string | null>(() => {
+    if (typeof window !== 'undefined') {
+      return new URLSearchParams(window.location.search).get('project') ?? null
+    }
+    return null
+  })
   const [statusFilter, setStatusFilter] = useState<'todas' | 'activas' | 'completadas'>('todas')
 
   // Selected bot / logs
@@ -520,6 +525,14 @@ export default function DevbotPage() {
   const [profNombre,  setProfNombre]  = useState('')
   const [profTel,     setProfTel]     = useState('')
   const [savingProf,  setSavingProf]  = useState(false)
+
+  // Sync selectedProject to URL ?project= param
+  useEffect(() => {
+    const url = new URL(window.location.href)
+    if (selectedProject) url.searchParams.set('project', selectedProject)
+    else url.searchParams.delete('project')
+    window.history.replaceState(null, '', url.toString())
+  }, [selectedProject])
 
   // Timer tick for elapsed
   const [, setTick] = useState(0)
@@ -956,7 +969,14 @@ export default function DevbotPage() {
       {/* FAB */}
       {connected && (
         <button
-          onClick={() => { setShowModal(true); setModalErr('') }}
+          onClick={() => {
+          const match = selectedProject
+            ? projects.find(p => projectName(p.path) === selectedProject)?.name ?? ''
+            : ''
+          setModalProj(match)
+          setShowModal(true)
+          setModalErr('')
+        }}
           className="fixed bottom-6 right-6 w-14 h-14 rounded-full text-2xl font-bold shadow-xl transition-all hover:scale-105 active:scale-95 z-10"
           style={{ backgroundColor: '#c8f135', color: '#0a0a0a' }}
           aria-label="Nueva tarea"
