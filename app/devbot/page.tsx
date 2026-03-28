@@ -323,6 +323,7 @@ type BotCardProps = {
   onToggle: (id: string) => void
   onStop: (id: string) => void
   onClose: (id: string) => void
+  onReopen: (id: string) => void
   onReplyChange: (id: string, val: string) => void
   onReplySend: (bot: Bot) => void
 }
@@ -331,7 +332,7 @@ function BotCard({
   bot, depth = 0,
   openId, logs, loadingLogs, logsEndRef, children,
   replyText, replying,
-  onToggle, onStop, onClose, onReplyChange, onReplySend,
+  onToggle, onStop, onClose, onReopen, onReplyChange, onReplySend,
 }: BotCardProps) {
   const isOpen    = openId === bot.id
   const botLogs   = logs[bot.id] ?? []
@@ -401,6 +402,12 @@ function BotCard({
                 Archivar
               </button>
             )}
+            {bot.closed && (
+              <button onClick={e => { e.stopPropagation(); onReopen(bot.id) }}
+                className="text-xs px-2 py-1 rounded border border-[#c8f135]/20 text-[#c8f135]/50 hover:text-[#c8f135] hover:border-[#c8f135]/40 transition-colors">
+                Reabrir
+              </button>
+            )}
             <span className="text-white/20 text-sm">{isOpen ? '▲' : '▼'}</span>
           </div>
         </div>
@@ -463,7 +470,7 @@ function BotCard({
           openId={openId} logs={logs} loadingLogs={loadingLogs}
           logsEndRef={logsEndRef} children={children}
           replyText={replyText} replying={replying}
-          onToggle={onToggle} onStop={onStop} onClose={onClose}
+          onToggle={onToggle} onStop={onStop} onClose={onClose} onReopen={onReopen}
           onReplyChange={onReplyChange} onReplySend={onReplySend}
         />
       ))}
@@ -487,6 +494,8 @@ export default function DevbotPage() {
   const [projects,    setProjects]    = useState<Project[]>([])
   const [config,      setConfig]      = useState<Config>({})
   const [showClosed,  setShowClosed]  = useState(false)
+  const [selectedProject, setSelectedProject] = useState<string | null>(null)
+  const [statusFilter, setStatusFilter] = useState<'todas' | 'activas' | 'completadas'>('todas')
 
   // Selected bot / logs
   const [openId,      setOpenId]      = useState<string | null>(null)
@@ -666,6 +675,12 @@ export default function DevbotPage() {
     setBots(prev => prev.map(b => b.id !== id ? b : { ...b, closed: true }))
   }
 
+  async function reopenBot(id: string) {
+    await api(`/api/bots/${id}/reopen`, { method: 'POST' })
+    setBots(prev => prev.map(b => b.id !== id ? b : { ...b, closed: false, status: b.status === 'completado' ? 'detenido' : b.status }))
+    setShowClosed(true)
+  }
+
   async function sendReply(bot: Bot) {
     const msg = (replyText[bot.id] ?? '').trim()
     if (!msg) return
@@ -751,8 +766,16 @@ export default function DevbotPage() {
     }
   }
   // Top-level bots (no parent), sorted newest first
+  const projectNames = [...new Set(bots.filter(b => !b.parentBotId).map(b => projectName(b.projectPath)))]
+
   const topBots = [...bots]
     .filter(b => !b.parentBotId && (showClosed || !b.closed))
+    .filter(b => !selectedProject || projectName(b.projectPath) === selectedProject)
+    .filter(b => {
+      if (statusFilter === 'activas') return b.status === 'corriendo' || b.status === 'iniciando'
+      if (statusFilter === 'completadas') return b.status === 'completado' || b.status === 'detenido' || b.status === 'error'
+      return true
+    })
     .sort((a, b) => new Date(b.startTime).getTime() - new Date(a.startTime).getTime())
 
   const activeBots = bots.filter(b => b.status === 'corriendo' || b.status === 'iniciando')
@@ -865,24 +888,69 @@ export default function DevbotPage() {
 
       {/* Bot list */}
       {connected && (
-        <main className="max-w-2xl mx-auto px-4 py-6 space-y-3">
-          {topBots.length === 0 ? (
-            <p className="text-center text-white/30 py-16 text-sm">
-              Ningún bot activo. Presioná <strong>+</strong> para lanzar una tarea.
-            </p>
-          ) : (
-            topBots.map(bot => (
-              <BotCard key={bot.id} bot={bot}
-                openId={openId} logs={logs} loadingLogs={loadingLogs}
-                logsEndRef={logsEndRef} children={children}
-                replyText={replyText} replying={replying}
-                onToggle={toggleBot} onStop={stopBot} onClose={closeBot}
-                onReplyChange={(id, val) => setReplyText(p => ({ ...p, [id]: val }))}
-                onReplySend={sendReply}
-              />
-            ))
+        <>
+          {/* Filtros */}
+          {bots.length > 0 && (
+            <div className="max-w-2xl mx-auto px-4 pt-4 space-y-2">
+              {/* Status tabs */}
+              <div className="flex gap-1.5">
+                {(['todas', 'activas', 'completadas'] as const).map(f => (
+                  <button key={f} onClick={() => setStatusFilter(f)}
+                    className={`text-xs px-3 py-1.5 rounded-lg border transition-colors capitalize ${
+                      statusFilter === f
+                        ? 'border-[#c8f135]/40 text-[#c8f135] bg-[#c8f135]/10'
+                        : 'border-white/10 text-white/40 hover:text-white hover:border-white/20'
+                    }`}>
+                    {f.charAt(0).toUpperCase() + f.slice(1)}
+                  </button>
+                ))}
+              </div>
+              {/* Project pills */}
+              {projectNames.length > 1 && (
+                <div className="flex gap-1.5 flex-wrap">
+                  <button onClick={() => setSelectedProject(null)}
+                    className={`text-xs px-3 py-1.5 rounded-lg border transition-colors ${
+                      !selectedProject
+                        ? 'border-white/30 text-white bg-white/5'
+                        : 'border-white/10 text-white/40 hover:text-white hover:border-white/20'
+                    }`}>
+                    Todos
+                  </button>
+                  {projectNames.map(name => (
+                    <button key={name} onClick={() => setSelectedProject(name === selectedProject ? null : name)}
+                      className={`text-xs px-3 py-1.5 rounded-lg border transition-colors font-mono ${
+                        selectedProject === name
+                          ? 'border-white/30 text-white bg-white/5'
+                          : 'border-white/10 text-white/40 hover:text-white hover:border-white/20'
+                      }`}>
+                      {name}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
           )}
-        </main>
+          <main className="max-w-2xl mx-auto px-4 py-4 space-y-3">
+            {topBots.length === 0 ? (
+              <p className="text-center text-white/30 py-16 text-sm">
+                {bots.length === 0
+                  ? <>Ningún bot activo. Presioná <strong>+</strong> para lanzar una tarea.</>
+                  : 'Sin tareas para este filtro.'}
+              </p>
+            ) : (
+              topBots.map(bot => (
+                <BotCard key={bot.id} bot={bot}
+                  openId={openId} logs={logs} loadingLogs={loadingLogs}
+                  logsEndRef={logsEndRef} children={children}
+                  replyText={replyText} replying={replying}
+                  onToggle={toggleBot} onStop={stopBot} onClose={closeBot} onReopen={reopenBot}
+                  onReplyChange={(id, val) => setReplyText(p => ({ ...p, [id]: val }))}
+                  onReplySend={sendReply}
+                />
+              ))
+            )}
+          </main>
+        </>
       )}
 
       {/* FAB */}
