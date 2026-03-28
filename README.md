@@ -1,3 +1,4 @@
+```mermaid
 graph TD
     subgraph Core_y_Gestion ["Core & Auth"]
         accounts[puntoindigo/accounts] style accounts fill:#f9f,stroke:#333
@@ -25,7 +26,7 @@ graph TD
         dev[puntoindigo/dev]
     end
 
-    %% Relaciones sugeridas
+    %% Relaciones
     id --> accounts
     accounts --> remitero
     ai --> orchestrator
